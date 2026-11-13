@@ -2,15 +2,16 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -109,12 +110,28 @@ export default function EditHealthRecordScreen() {
   }, [db, recordId, patientId]);
 
   async function handleSave() {
+    if (saving || loading) return;
+
     const id = Number(recordId);
     const patient = Number(patientId);
 
-    const hasPressure = systolic.trim() !== "" || diastolic.trim() !== "";
+    if (
+      !Number.isInteger(id) ||
+      id <= 0 ||
+      !Number.isInteger(patient) ||
+      patient <= 0
+    ) {
+      showMessage("Erro", "Identificação inválida.");
+      return;
+    }
 
-    if (hasPressure && (!systolic.trim() || !diastolic.trim())) {
+    const systolicText = systolic.trim();
+    const diastolicText = diastolic.trim();
+    const temperatureText = temperature.trim();
+
+    const hasPressure = systolicText !== "" || diastolicText !== "";
+
+    if (hasPressure && (!systolicText || !diastolicText)) {
       showMessage(
         "Pressão incompleta",
         "Preencha os valores sistólico e diastólico.",
@@ -122,20 +139,24 @@ export default function EditHealthRecordScreen() {
       return;
     }
 
-    const systolicValue = systolic.trim() ? Number(systolic) : null;
-    const diastolicValue = diastolic.trim() ? Number(diastolic) : null;
+    const systolicValue = systolicText ? Number(systolicText) : null;
 
-    const temperatureValue = temperature.trim()
-      ? Number(temperature.replace(",", "."))
+    const diastolicValue = diastolicText ? Number(diastolicText) : null;
+
+    const temperatureValue = temperatureText
+      ? Number(temperatureText.replace(",", "."))
       : null;
 
     if (
       (systolicValue !== null &&
-        (!Number.isInteger(systolicValue) || systolicValue <= 0)) ||
+        (!Number.isSafeInteger(systolicValue) || systolicValue <= 0)) ||
       (diastolicValue !== null &&
-        (!Number.isInteger(diastolicValue) || diastolicValue <= 0))
+        (!Number.isSafeInteger(diastolicValue) || diastolicValue <= 0))
     ) {
-      showMessage("Valor inválido", "Confira os valores da pressão arterial.");
+      showMessage(
+        "Valor inválido",
+        "Confira os valores da pressão arterial. Informe números inteiros positivos.",
+      );
       return;
     }
 
@@ -160,8 +181,6 @@ export default function EditHealthRecordScreen() {
       return;
     }
 
-    if (saving) return;
-
     setSaving(true);
 
     try {
@@ -183,7 +202,10 @@ export default function EditHealthRecordScreen() {
       );
 
       if (result.changes === 0) {
-        showMessage("Aviso", "Nenhuma alteração foi realizada.");
+        showMessage(
+          "Aviso",
+          "Nenhuma alteração foi realizada. Verifique se o registro ainda existe.",
+        );
         return;
       }
 
@@ -205,8 +227,9 @@ export default function EditHealthRecordScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#176B87" />
+        <Text style={styles.loadingText}>Carregando registro...</Text>
       </SafeAreaView>
     );
   }
@@ -221,78 +244,127 @@ export default function EditHealthRecordScreen() {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
-          <Pressable style={styles.backButton} onPress={goBackToDetails}>
-            <Text style={styles.backButtonText}>‹ Voltar ao paciente</Text>
-          </Pressable>
+          <View style={styles.formContainer}>
+            <Pressable style={styles.backButton} onPress={goBackToDetails}>
+              <Text style={styles.backButtonText}>‹ Voltar ao paciente</Text>
+            </Pressable>
 
-          <Text style={styles.title}>Editar registro</Text>
+            <View style={styles.header}>
+              <Text style={styles.title}>Editar registro</Text>
 
-          <Text style={styles.description}>
-            Atualize as informações de saúde cadastradas.
-          </Text>
+              <Text style={styles.description}>
+                Atualize as informações de saúde cadastradas para este paciente.
+              </Text>
+            </View>
 
-          <Text style={styles.sectionTitle}>Pressão arterial</Text>
+            <View style={styles.notice}>
+              <Text style={styles.noticeText}>
+                Os campos são opcionais, mas você precisa preencher pelo menos
+                uma informação antes de salvar.
+              </Text>
+            </View>
 
-          <Text style={styles.label}>Pressão sistólica (mmHg)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ex.: 120"
-            value={systolic}
-            onChangeText={setSystolic}
-            keyboardType="number-pad"
-          />
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Pressão arterial</Text>
 
-          <Text style={styles.label}>Pressão diastólica (mmHg)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ex.: 80"
-            value={diastolic}
-            onChangeText={setDiastolic}
-            keyboardType="number-pad"
-          />
+              <Text style={styles.sectionDescription}>
+                Informe os valores em milímetros de mercúrio (mmHg).
+              </Text>
 
-          <Text style={styles.sectionTitle}>Temperatura corporal</Text>
+              <Text style={styles.label}>Pressão sistólica</Text>
 
-          <Text style={styles.label}>Temperatura (°C)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ex.: 36,5"
-            value={temperature}
-            onChangeText={setTemperature}
-            keyboardType="decimal-pad"
-          />
+              <TextInput
+                style={styles.input}
+                placeholder="Ex.: 120"
+                placeholderTextColor="#94A3B8"
+                value={systolic}
+                onChangeText={setSystolic}
+                keyboardType="number-pad"
+              />
 
-          <Text style={styles.sectionTitle}>Informações adicionais</Text>
+              <Text style={styles.label}>Pressão diastólica</Text>
 
-          <Text style={styles.label}>Sintomas</Text>
-          <TextInput
-            style={[styles.input, styles.multiline]}
-            placeholder="Descreva os sintomas..."
-            value={symptoms}
-            onChangeText={setSymptoms}
-            multiline
-            textAlignVertical="top"
-          />
+              <TextInput
+                style={styles.input}
+                placeholder="Ex.: 80"
+                placeholderTextColor="#94A3B8"
+                value={diastolic}
+                onChangeText={setDiastolic}
+                keyboardType="number-pad"
+              />
+            </View>
 
-          <Text style={styles.label}>Observações profissionais</Text>
-          <TextInput
-            style={[styles.input, styles.multiline]}
-            placeholder="Adicione observações..."
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-            textAlignVertical="top"
-          />
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Temperatura corporal</Text>
 
-          <Pressable
-            style={[styles.button, saving && styles.buttonDisabled]}
-            onPress={handleSave}
-            disabled={saving}
-          >
-            <Text style={styles.buttonText}>
-              {saving ? "Salvando..." : "Salvar alterações"}
-            </Text>
-          </Pressable>
+              <Text style={styles.sectionDescription}>
+                Informe a temperatura em graus Celsius.
+              </Text>
+
+              <Text style={styles.label}>Temperatura (°C)</Text>
+
+              <TextInput
+                style={styles.input}
+                placeholder="Ex.: 36,5"
+                placeholderTextColor="#94A3B8"
+                value={temperature}
+                onChangeText={setTemperature}
+                keyboardType="decimal-pad"
+              />
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Informações adicionais</Text>
+
+              <Text style={styles.sectionDescription}>
+                Registre sintomas e observações relevantes.
+              </Text>
+
+              <Text style={styles.label}>Sintomas</Text>
+
+              <TextInput
+                style={[styles.input, styles.multiline]}
+                placeholder="Descreva os sintomas apresentados..."
+                placeholderTextColor="#94A3B8"
+                value={symptoms}
+                onChangeText={setSymptoms}
+                multiline
+                textAlignVertical="top"
+              />
+
+              <Text style={styles.label}>Observações profissionais</Text>
+
+              <TextInput
+                style={[styles.input, styles.multiline]}
+                placeholder="Adicione observações sobre o registro..."
+                placeholderTextColor="#94A3B8"
+                value={notes}
+                onChangeText={setNotes}
+                multiline
+                textAlignVertical="top"
+              />
+            </View>
+
+            <Pressable
+              style={[styles.saveButton, saving && styles.buttonDisabled]}
+              onPress={handleSave}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.saveButtonText}>Salvar alterações</Text>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={styles.cancelButton}
+              onPress={goBackToDetails}
+              disabled={saving}
+            >
+              <Text style={styles.cancelButtonText}>Cancelar</Text>
+            </Pressable>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -304,45 +376,91 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F4F7FB",
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F4F7FB",
+  },
+  loadingText: {
+    marginTop: 12,
+    color: "#64748B",
+    fontSize: 14,
+  },
   keyboard: {
     flex: 1,
   },
   content: {
-    padding: 24,
+    flexGrow: 1,
+    alignItems: "center",
+    padding: 20,
     paddingBottom: 40,
+  },
+  formContainer: {
+    width: "100%",
+    maxWidth: 650,
   },
   backButton: {
     alignSelf: "flex-start",
-    marginBottom: 18,
     paddingVertical: 8,
+    marginBottom: 18,
   },
   backButtonText: {
     color: "#176B87",
     fontSize: 15,
     fontWeight: "600",
   },
+  header: {
+    marginBottom: 22,
+  },
   title: {
-    fontSize: 26,
-    fontWeight: "bold",
     color: "#183153",
+    fontSize: 28,
+    fontWeight: "700",
   },
   description: {
-    fontSize: 15,
     color: "#64748B",
+    fontSize: 15,
+    lineHeight: 22,
     marginTop: 8,
-    marginBottom: 24,
+  },
+  notice: {
+    backgroundColor: "#E8F3F7",
+    borderWidth: 1,
+    borderColor: "#C8E1EA",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 18,
+  },
+  noticeText: {
+    color: "#24566B",
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 20,
+    marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
     color: "#183153",
-    marginTop: 24,
-    marginBottom: 8,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  sectionDescription: {
+    color: "#64748B",
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 5,
+    marginBottom: 12,
   },
   label: {
+    color: "#334155",
     fontSize: 14,
     fontWeight: "600",
-    color: "#183153",
     marginTop: 14,
     marginBottom: 8,
   },
@@ -351,26 +469,39 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DCE3EC",
     borderRadius: 10,
-    padding: 15,
-    fontSize: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 15,
     color: "#183153",
   },
   multiline: {
-    minHeight: 100,
+    minHeight: 110,
+    paddingTop: 13,
   },
-  button: {
+  saveButton: {
     backgroundColor: "#176B87",
-    padding: 17,
-    borderRadius: 10,
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: "center",
-    marginTop: 28,
+    justifyContent: "center",
+    marginTop: 6,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
-  buttonText: {
+  saveButtonText: {
     color: "#FFFFFF",
     fontSize: 16,
+    fontWeight: "700",
+  },
+  cancelButton: {
+    alignItems: "center",
+    paddingVertical: 15,
+    marginTop: 6,
+  },
+  cancelButtonText: {
+    color: "#64748B",
+    fontSize: 15,
     fontWeight: "600",
   },
 });
