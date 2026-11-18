@@ -1,3 +1,4 @@
+import { useOrganization } from "@/context/organization-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { useEffect, useState } from "react";
@@ -26,6 +27,7 @@ export default function EditPatientScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const { patientId } = useLocalSearchParams<{ patientId: string }>();
+  const { activeOrganization } = useOrganization();
 
   const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
@@ -80,7 +82,7 @@ export default function EditPatientScreen() {
 
         const id = Number(patientId);
 
-        if (!Number.isInteger(id) || id <= 0) {
+        if (!activeOrganization || !Number.isInteger(id) || id <= 0) {
           if (active) {
             setLoadError(true);
           }
@@ -88,8 +90,10 @@ export default function EditPatientScreen() {
         }
 
         const patient = await db.getFirstAsync<Patient>(
-          "SELECT * FROM patients WHERE id = ?",
+          `SELECT * FROM patients
+           WHERE id = ? AND organization_id = ?`,
           id,
+          activeOrganization.id,
         );
 
         if (!active) return;
@@ -120,7 +124,7 @@ export default function EditPatientScreen() {
     return () => {
       active = false;
     };
-  }, [db, patientId]);
+  }, [db, patientId, activeOrganization?.id]);
 
   async function handleSave() {
     if (saving) return;
@@ -129,6 +133,11 @@ export default function EditPatientScreen() {
     const cleanName = name.trim();
     const cleanBirthDate = birthDate.trim();
     const cleanPhone = phone.trim();
+
+    if (!activeOrganization) {
+      showMessage("Erro", "Nenhuma clínica está selecionada.");
+      return;
+    }
 
     if (!Number.isInteger(id) || id <= 0) {
       showMessage("Erro", "Identificação do paciente inválida.");
@@ -157,11 +166,12 @@ export default function EditPatientScreen() {
       const result = await db.runAsync(
         `UPDATE patients
          SET name = ?, birth_date = ?, phone = ?
-         WHERE id = ?`,
+         WHERE id = ? AND organization_id = ?`,
         cleanName,
         cleanBirthDate,
         cleanPhone || null,
         id,
+        activeOrganization.id,
       );
 
       if (result.changes === 0) {

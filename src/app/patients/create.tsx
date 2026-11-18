@@ -15,9 +15,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useOrganization } from "@/context/organization-context";
+
 export default function CreatePatientScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
+  const { activeOrganization } = useOrganization();
 
   const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
@@ -83,16 +86,30 @@ export default function CreatePatientScreen() {
       return;
     }
 
+    if (!activeOrganization) {
+      showMessage(
+        "Clínica não selecionada",
+        "Selecione uma clínica antes de cadastrar pacientes.",
+      );
+      return;
+    }
+
     setSaving(true);
 
     try {
       await db.runAsync(
-        `INSERT INTO patients (name, birth_date, phone, created_at)
-         VALUES (?, ?, ?, ?)`,
+        `INSERT INTO patients (
+          name,
+          birth_date,
+          phone,
+          created_at,
+          organization_id
+        ) VALUES (?, ?, ?, ?, ?)`,
         cleanName,
         cleanBirthDate,
         cleanPhone || null,
         new Date().toISOString(),
+        activeOrganization.id,
       );
 
       if (Platform.OS === "web") {

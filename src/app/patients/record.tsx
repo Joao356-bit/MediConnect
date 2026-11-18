@@ -15,10 +15,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useOrganization } from "@/context/organization-context";
+
 export default function CreateHealthRecordScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const { patientId } = useLocalSearchParams<{ patientId: string }>();
+  const { activeOrganization } = useOrganization();
 
   const [systolic, setSystolic] = useState("");
   const [diastolic, setDiastolic] = useState("");
@@ -49,6 +52,14 @@ export default function CreateHealthRecordScreen() {
 
     if (!Number.isInteger(id) || id <= 0) {
       showMessage("Erro", "Identificação do paciente inválida.");
+      return;
+    }
+
+    if (!activeOrganization) {
+      showMessage(
+        "Clínica não selecionada",
+        "Selecione uma clínica antes de registrar informações de saúde.",
+      );
       return;
     }
 
@@ -128,12 +139,19 @@ export default function CreateHealthRecordScreen() {
 
     try {
       const patient = await db.getFirstAsync<{ id: number }>(
-        "SELECT id FROM patients WHERE id = ?",
+        `SELECT id
+         FROM patients
+         WHERE id = ?
+         AND organization_id = ?`,
         id,
+        activeOrganization.id,
       );
 
       if (!patient) {
-        showMessage("Erro", "Paciente não encontrado.");
+        showMessage(
+          "Paciente não encontrado",
+          "Este paciente não pertence à clínica atualmente selecionada.",
+        );
         return;
       }
 

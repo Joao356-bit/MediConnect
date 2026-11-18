@@ -12,12 +12,15 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useOrganization } from "@/context/organization-context";
+
 type Patient = {
   id: number;
   name: string;
   birth_date: string;
   phone: string | null;
   created_at: string;
+  organization_id: string | null;
 };
 
 function formatBirthDate(value: string): string {
@@ -33,6 +36,7 @@ function formatBirthDate(value: string): string {
 export default function PatientsScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
+  const { activeOrganization } = useOrganization();
 
   const [patients, setPatients] = useState<Patient[]>([]);
   const [search, setSearch] = useState("");
@@ -48,8 +52,19 @@ export default function PatientsScreen() {
           setLoading(true);
           setError(false);
 
+          if (!activeOrganization) {
+            if (active) {
+              setPatients([]);
+            }
+            return;
+          }
+
           const result = await db.getAllAsync<Patient>(
-            "SELECT * FROM patients ORDER BY name ASC",
+            `SELECT *
+             FROM patients
+             WHERE organization_id = ?
+             ORDER BY name ASC`,
+            activeOrganization.id,
           );
 
           if (active) {
@@ -73,7 +88,7 @@ export default function PatientsScreen() {
       return () => {
         active = false;
       };
-    }, [db]),
+    }, [db, activeOrganization?.id]),
   );
 
   const filteredPatients = useMemo(() => {
@@ -116,9 +131,19 @@ export default function PatientsScreen() {
               Gerencie os pacientes cadastrados no MediConnect.
             </Text>
 
+            {activeOrganization && (
+              <View style={styles.organizationBadge}>
+                <Text style={styles.organizationLabel}>Clínica ativa</Text>
+                <Text style={styles.organizationName}>
+                  {activeOrganization.name}
+                </Text>
+              </View>
+            )}
+
             <Pressable
               style={styles.addButton}
               onPress={() => router.push("/patients/create")}
+              disabled={!activeOrganization}
             >
               <Text style={styles.addButtonText}>+ Cadastrar paciente</Text>
             </Pressable>
@@ -197,8 +222,8 @@ export default function PatientsScreen() {
                 </Text>
 
                 <Text style={styles.emptyDescription}>
-                  Verifique sua conexão com o banco de dados e tente novamente
-                  ao retornar à tela.
+                  Ocorreu um erro ao consultar os pacientes. Tente novamente ao
+                  retornar à tela.
                 </Text>
               </>
             ) : search.trim() ? (
@@ -260,6 +285,23 @@ const styles = StyleSheet.create({
     color: "#64748B",
     marginTop: 8,
     lineHeight: 21,
+  },
+  organizationBadge: {
+    backgroundColor: "#E6F4F8",
+    padding: 13,
+    borderRadius: 10,
+    marginTop: 18,
+  },
+  organizationLabel: {
+    color: "#64748B",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  organizationName: {
+    color: "#176B87",
+    fontSize: 14,
+    fontWeight: "700",
+    marginTop: 4,
   },
   addButton: {
     backgroundColor: "#176B87",

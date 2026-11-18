@@ -1,3 +1,4 @@
+import { useOrganization } from "@/context/organization-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { useEffect, useState } from "react";
@@ -33,6 +34,7 @@ export default function EditHealthRecordScreen() {
     recordId: string;
     patientId: string;
   }>();
+  const { activeOrganization } = useOrganization();
 
   const [systolic, setSystolic] = useState("");
   const [diastolic, setDiastolic] = useState("");
@@ -69,6 +71,7 @@ export default function EditHealthRecordScreen() {
         const patient = Number(patientId);
 
         if (
+          !activeOrganization ||
           !Number.isInteger(id) ||
           id <= 0 ||
           !Number.isInteger(patient) ||
@@ -80,10 +83,16 @@ export default function EditHealthRecordScreen() {
         }
 
         const record = await db.getFirstAsync<HealthRecord>(
-          `SELECT * FROM health_records
-           WHERE id = ? AND patient_id = ?`,
+          `SELECT health_records.*
+           FROM health_records
+           INNER JOIN patients
+             ON patients.id = health_records.patient_id
+           WHERE health_records.id = ?
+             AND health_records.patient_id = ?
+             AND patients.organization_id = ?`,
           id,
           patient,
+          activeOrganization.id,
         );
 
         if (!record) {
@@ -107,13 +116,18 @@ export default function EditHealthRecordScreen() {
     }
 
     loadRecord();
-  }, [db, recordId, patientId]);
+  }, [db, recordId, patientId, activeOrganization?.id]);
 
   async function handleSave() {
     if (saving || loading) return;
 
     const id = Number(recordId);
     const patient = Number(patientId);
+
+    if (!activeOrganization) {
+      showMessage("Erro", "Nenhuma clínica está selecionada.");
+      return;
+    }
 
     if (
       !Number.isInteger(id) ||
@@ -191,7 +205,13 @@ export default function EditHealthRecordScreen() {
              temperature = ?,
              symptoms = ?,
              notes = ?
-         WHERE id = ? AND patient_id = ?`,
+         WHERE id = ?
+           AND patient_id = ?
+           AND EXISTS (
+             SELECT 1 FROM patients
+             WHERE patients.id = health_records.patient_id
+               AND patients.organization_id = ?
+           )`,
         systolicValue,
         diastolicValue,
         temperatureValue,
@@ -199,6 +219,7 @@ export default function EditHealthRecordScreen() {
         notes.trim() || null,
         id,
         patient,
+        activeOrganization.id,
       );
 
       if (result.changes === 0) {

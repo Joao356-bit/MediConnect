@@ -1,3 +1,4 @@
+import { useOrganization } from "@/context/organization-context";
 import { Link, useFocusEffect } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { useCallback, useState } from "react";
@@ -40,6 +41,7 @@ function formatDate(value: string): string {
 
 export default function HomeScreen() {
   const db = useSQLiteContext();
+  const { activeOrganization } = useOrganization();
 
   const [stats, setStats] = useState<DashboardStats>({
     patients: 0,
@@ -59,28 +61,50 @@ export default function HomeScreen() {
           setLoading(true);
           setError(false);
 
+          if (!activeOrganization) {
+            if (active) {
+              setStats({ patients: 0, records: 0 });
+              setRecentRecords([]);
+            }
+            return;
+          }
+
+          const organizationId = activeOrganization.id;
+
           const patientsResult = await db.getFirstAsync<{
             total: number;
-          }>("SELECT COUNT(*) AS total FROM patients");
+          }>(
+            "SELECT COUNT(*) AS total FROM patients WHERE organization_id = ?",
+            organizationId,
+          );
 
           const recordsResult = await db.getFirstAsync<{
             total: number;
-          }>("SELECT COUNT(*) AS total FROM health_records");
+          }>(
+            `SELECT COUNT(*) AS total
+             FROM health_records
+             INNER JOIN patients
+               ON patients.id = health_records.patient_id
+             WHERE patients.organization_id = ?`,
+            organizationId,
+          );
 
-          const records = await db.getAllAsync<RecentRecord>(`
-            SELECT
-              health_records.id,
-              patients.name AS patient_name,
-              health_records.recorded_at,
-              health_records.systolic_pressure,
-              health_records.diastolic_pressure,
-              health_records.temperature
-            FROM health_records
-            INNER JOIN patients
-              ON patients.id = health_records.patient_id
-            ORDER BY health_records.recorded_at DESC
-            LIMIT 5
-          `);
+          const records = await db.getAllAsync<RecentRecord>(
+            `SELECT
+               health_records.id,
+               patients.name AS patient_name,
+               health_records.recorded_at,
+               health_records.systolic_pressure,
+               health_records.diastolic_pressure,
+               health_records.temperature
+             FROM health_records
+             INNER JOIN patients
+               ON patients.id = health_records.patient_id
+             WHERE patients.organization_id = ?
+             ORDER BY health_records.recorded_at DESC
+             LIMIT 5`,
+            organizationId,
+          );
 
           if (active) {
             setStats({
@@ -108,7 +132,7 @@ export default function HomeScreen() {
       return () => {
         active = false;
       };
-    }, [db]),
+    }, [db, activeOrganization?.id]),
   );
 
   return (
@@ -123,6 +147,11 @@ export default function HomeScreen() {
             <Text style={styles.subtitle}>
               Gestão e acompanhamento de pacientes
             </Text>
+            {activeOrganization ? (
+              <Text style={styles.subtitle}>
+                Clínica: {activeOrganization.name}
+              </Text>
+            ) : null}
           </View>
         </View>
 

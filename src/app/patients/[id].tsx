@@ -1,3 +1,4 @@
+import { useOrganization } from "@/context/organization-context";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { useCallback, useState } from "react";
@@ -59,11 +60,24 @@ export default function PatientDetailsScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { activeOrganization, activeRole } = useOrganization();
+  const canDelete = activeRole === "owner" || activeRole === "admin";
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [records, setRecords] = useState<HealthRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+
+  function showPermissionDenied() {
+    const message =
+      "Seu papel nesta clínica não permite excluir pacientes ou registros.";
+
+    if (Platform.OS === "web") {
+      window.alert(`Permissão insuficiente\\n\\n${message}`);
+    } else {
+      Alert.alert("Permissão insuficiente", message);
+    }
+  }
 
   const loadData = useCallback(async () => {
     try {
@@ -71,15 +85,21 @@ export default function PatientDetailsScreen() {
 
       const patientId = Number(id);
 
-      if (!Number.isInteger(patientId) || patientId <= 0) {
+      if (
+        !activeOrganization ||
+        !Number.isInteger(patientId) ||
+        patientId <= 0
+      ) {
         setPatient(null);
         setRecords([]);
         return;
       }
 
       const patientResult = await db.getFirstAsync<Patient>(
-        "SELECT * FROM patients WHERE id = ?",
+        `SELECT * FROM patients
+         WHERE id = ? AND organization_id = ?`,
         patientId,
+        activeOrganization.id,
       );
 
       setPatient(patientResult ?? null);
@@ -108,7 +128,7 @@ export default function PatientDetailsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [db, id]);
+  }, [db, id, activeOrganization?.id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -138,10 +158,28 @@ export default function PatientDetailsScreen() {
   async function deletePatient() {
     if (!patient || deleting) return;
 
+    if (!canDelete) {
+      showPermissionDenied();
+      return;
+    }
+
     setDeleting(true);
 
     try {
-      await db.runAsync("DELETE FROM patients WHERE id = ?", patient.id);
+      if (!activeOrganization) {
+        throw new Error("Nenhuma clínica está selecionada.");
+      }
+
+      const result = await db.runAsync(
+        `DELETE FROM patients
+         WHERE id = ? AND organization_id = ?`,
+        patient.id,
+        activeOrganization.id,
+      );
+
+      if (result.changes === 0) {
+        throw new Error("Paciente não encontrado na clínica ativa.");
+      }
 
       if (Platform.OS === "web") {
         window.alert("Sucesso\n\nPaciente e respectivos registros excluídos.");
@@ -169,6 +207,11 @@ export default function PatientDetailsScreen() {
 
   function handleDeletePatient() {
     if (!patient || deleting) return;
+
+    if (!canDelete) {
+      showPermissionDenied();
+      return;
+    }
 
     const message =
       `Tem certeza de que deseja excluir ${patient.name}?\n\n` +
@@ -202,13 +245,33 @@ export default function PatientDetailsScreen() {
   }
 
   async function deleteRecord(record: HealthRecord) {
+    if (!canDelete) {
+      showPermissionDenied();
+      return;
+    }
+
     try {
-      await db.runAsync(
+      if (!activeOrganization) {
+        throw new Error("Nenhuma clínica está selecionada.");
+      }
+
+      const result = await db.runAsync(
         `DELETE FROM health_records
-         WHERE id = ? AND patient_id = ?`,
+         WHERE id = ?
+           AND patient_id = ?
+           AND EXISTS (
+             SELECT 1 FROM patients
+             WHERE patients.id = health_records.patient_id
+               AND patients.organization_id = ?
+           )`,
         record.id,
         record.patient_id,
+        activeOrganization.id,
       );
+
+      if (result.changes === 0) {
+        throw new Error("Registro não encontrado na clínica ativa.");
+      }
 
       await loadData();
 
@@ -229,6 +292,11 @@ export default function PatientDetailsScreen() {
   }
 
   function handleDelete(record: HealthRecord) {
+    if (!canDelete) {
+      showPermissionDenied();
+      return;
+    }
+
     const message =
       "Tem certeza de que deseja excluir este registro de saúde? Essa ação não poderá ser desfeita.";
 
@@ -343,15 +411,17 @@ export default function PatientDetailsScreen() {
             </Text>
           </Pressable>
 
-          <Pressable
-            style={styles.dangerButton}
-            onPress={handleDeletePatient}
-            disabled={deleting}
-          >
-            <Text style={styles.dangerButtonText}>
-              {deleting ? "Excluindo..." : "Excluir paciente"}
-            </Text>
-          </Pressable>
+          {canDelete ? (
+            <Pressable
+              style={styles.dangerButton}
+              onPress={handleDeletePatient}
+              disabled={deleting}
+            >
+              <Text style={styles.dangerButtonText}>
+                {deleting ? "Excluindo..." : "Excluir paciente"}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.historyHeader}>
@@ -445,12 +515,14 @@ export default function PatientDetailsScreen() {
                   <Text style={styles.editButtonText}>Editar</Text>
                 </Pressable>
 
-                <Pressable
-                  style={styles.deleteButton}
-                  onPress={() => handleDelete(record)}
-                >
-                  <Text style={styles.deleteButtonText}>Excluir</Text>
-                </Pressable>
+                {canDelete ? (
+                  <Pressable
+                    style={styles.deleteButton}
+                    onPress={() => handleDelete(record)}
+                  >
+                    <Text style={styles.deleteButtonText}>Excluir</Text>
+                  </Pressable>
+                ) : null}
               </View>
             </View>
           ))
